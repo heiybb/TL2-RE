@@ -51,40 +51,68 @@ uv run python -m mikuro_mod_packer.mpp <LAYOUT> <OUT.mpp> [--snap 10]
 uv run python -m unittest discover -s tests -v
 ```
 
-## Benchmark — vs the native GUTS editor
+## Benchmark — vs the native GUTS editor (full 25-mod corpus)
 
-**口径** — 原生:forked headless `tl2_console_fork` 驱动真 `EditorGuts.dll`,
-`InitEditor` 一次性 **5.14s**(下表已摊销),之后每 mod **warm** 计时(`CreateMod`
-= 编译 + RAW + 打包,`EditorRegenPathingData` = byte-exact MPP)。我们:本仓
-`tools/bench_all_mods.py`,**从零、内存内、不改动源 mod**,MPP 走离线 numba 后端。
-同机(16 核)、同一批 mod、同一 TL2 安装。
+**全语料从零打包:原生 GUTS 编辑器 ~23 分钟,本 packer ~82 秒 —— 端到端 16.6×。**
 
-| Mod | 原生 total (s) | **我们 total (s)** | 倍率 |
+**口径** — 原生:forked headless `tl2_console_fork` 驱动真 `EditorGuts.dll`
+(`InitEditor` 一次性 **3.85s**,已摊销),每 mod **warm** 计时 `CreateMod`(编译 +
+RAW + 打包)+ `EditorRegenPathingData`(byte-exact MPP);`COMMANDMENTS` 作冷启动
+warm-up 丢弃,其余 **24 个全部 `ok`**。我们:`tools/bench_all_mods.py`,**从零、
+内存内、不改动源 mod**,MPP 走离线 numba 后端。同机(16 核)、同一 TL2 安装。
+
+| 阶段 | 原生 (s) | 我们 (s) | 倍率 |
 |---|--:|--:|--:|
-| final_fantasy_weapons | 0.77 | **0.07** | 11.0× |
-| arkhamsarmory | 1.46 | **0.22** | 6.6× |
-| AdventurerTime (33.8 MB) | 6.31 | **0.52** | 12.1× |
-| SYN_THROWING_WEAPONS | 1.41 | **0.18** | 7.8× |
-| MIKURO_FUN | 1.15 | **0.94** | 1.2× |
-| 挑战者大陆--佣兵系统 | 13.91 | **2.00** | 7.0× |
-| MIKURO_VANILLA_OVERHAUL | 51.11 | **4.97** | 10.3× |
-| 挑战者大陆--POE | 53.80 | **5.10** | 10.5× |
-| **8-mod 合计** | **129.9** (另 +5.14 一次性 init) | **14.0** | **≈ 9.3×** |
+| Build(编译 + RAW + 打包,**byte-exact 可比**) | 1053.8 | 58.0 | **18.2×** |
+| MPP(寻路栅格) | 301.1 | 23.5 | **12.8×** |
+| **合计**(另 +原生一次性 3.85s init) | **1354.9** | **81.6** | **16.6×** |
 
-- **MPP-heavy mod 差距最大**:VANILLA / POE 原生 51–54s,其中 byte-exact 寻路
-  regen 就占 **29–31s**;我们 numba 离线 MPP ~3.5s。光看 MPP ≈ **8–9× 快**。
-- **唯一接近的是 MIKURO_FUN**(关卡极少):离线 MPP 有 ~1s 的 numba 首次 JIT
-  固定开销(类比原生那 5.14s init,只是小得多),单 tile 摊不开。
-- **口径诚实**:原生 MPP 是 *byte-exact*,我们这条用的是 numba 离线**近似**
-  (整语料 ~99.7% cell 命中)。若要 byte-exact MPP,用 `--mpp dll` 驱动同一个
-  编辑器(MPP 段与原生同速),但编译 / RAW / 打包仍快 **3–90×**。
-- 完整 **25-mod 语料**从零打包合计约 **82s**(Compile 24 / RAW 19 / MPP 24 /
-  Pack 15;702 MB 输出)。逐项优化(185.5 → 83s)见
-  [`docs/性能优化记录.md`](docs/性能优化记录.md)。
+<details><summary><b>完整 24-mod 逐项(按原生耗时降序;点开)</b></summary>
 
-> 复现:`uv run python tools/bench_all_mods.py`(我们);
-> `python tools/bench_native.py --default`(原生,需 `tl2_console_fork` 编译出的
-> `TL2-Mikuro-Console.exe` 放进 TL2 安装目录)。
+| Mod | 文件 | 原生 build | 原生 MPP | 原生 total | **我们 total** | 倍率 |
+|---|--:|--:|--:|--:|--:|--:|
+| 挑战者大陆--通用素材01 | 12712 | 164.05 | 208.77 | 372.82 | **14.95** | 24.9× |
+| 挑战者大陆--职业技能 | 68217 | 268.42 | 0.00 | 268.42 | **12.17** | 22.1× |
+| 挑战者大陆--地图拓展 | 44060 | 234.02 | 8.96 | 242.98 | **13.99** | 17.4× |
+| 挑战者大陆--群魔堕落 | 52438 | 169.36 | 0.51 | 169.87 | **9.27** | 18.3× |
+| 挑战者大陆--暗黑传奇 | 32020 | 97.86 | 6.02 | 103.88 | **7.91** | 13.1× |
+| 挑战者大陆--POE | 1978 | 24.65 | 28.07 | 52.72 | **5.10** | 10.3× |
+| MIKURO_VANILLA_OVERHAUL | 1708 | 20.18 | 30.35 | 50.53 | **4.97** | 10.2× |
+| 挑战者大陆--暗黑世界(临时) | 354 | 9.68 | 17.26 | 26.94 | **3.64** | 7.4× |
+| 挑战者大陆--佣兵系统 | 2956 | 14.16 | 0.86 | 15.02 | **2.00** | 7.5× |
+| 挑战者大陆--至尊适配 | 1818 | 11.14 | 0.00 | 11.14 | **0.91** | 12.2× |
+| 挑战者大陆--实验内容 | 470 | 8.31 | 0.00 | 8.31 | **1.22** | 6.8× |
+| AdventurerTime | 523 | 6.27 | 0.00 | 6.27 | **0.52** | 12.1× |
+| VCO_paladin | 1554 | 4.80 | 0.00 | 4.80 | **0.81** | 5.9× |
+| 挑战者大陆--护身符 | 1348 | 4.29 | 0.00 | 4.29 | **0.49** | 8.8× |
+| MIKURO_CLASS_QLJX_EN | 955 | 3.32 | 0.00 | 3.32 | **0.73** | 4.5× |
+| MIKURO_CLASS_QLJX | 955 | 3.25 | 0.00 | 3.25 | **0.77** | 4.2× |
+| Loading_Screens_Maps+Creat | 32 | 2.79 | 0.00 | 2.79 | **0.18** | 15.5× |
+| 挑战者大陆--宠物系统 | 431 | 1.96 | 0.17 | 2.13 | **0.45** | 4.7× |
+| arkhamsarmory | 276 | 1.46 | 0.00 | 1.46 | **0.22** | 6.6× |
+| SYN_THROWING_WEAPONS | 367 | 1.34 | 0.00 | 1.34 | **0.18** | 7.4× |
+| MIKURO_FUN | 238 | 1.05 | 0.15 | 1.20 | **0.94** | 1.3× |
+| final_fantasy_weapons | 63 | 0.78 | 0.00 | 0.78 | **0.07** | 11.1× |
+| LurkerHUD_(Non-Conflict) | 24 | 0.46 | 0.00 | 0.46 | **0.05** | 9.2× |
+| EFFECTS_LIST_OVERHAUL | 3 | 0.21 | 0.00 | 0.21 | **0.02** | 10.5× |
+
+*(COMMANDMENTS 作 warm-up 已丢弃。)*
+
+</details>
+
+- **大 mod 是分水岭**:`职业技能`(68k 文件)原生 **268s** vs 我们 **12s**;
+  `通用素材01`(277 MB)原生 **373s** vs 我们 **15s**。原生编辑器逐文件串行
+  compile/pack,文件越多越塌;我们多进程 / 多线程并行,几乎线性。
+- **Build-only 已 18×**:不含 MPP 的编译 + RAW + 打包(可与原生**逐字节对齐**的
+  部分)原生 1053.8s vs 我们 58.0s —— 这块**没有任何近似**。
+- **口径诚实**:原生 MPP 是 *byte-exact*,我们这条是 numba 离线**近似**(整语料
+  ~99.7% cell 命中)。要 byte-exact 就用 `--mpp dll` 驱动同一编辑器(MPP 段与原生
+  同速),build 仍 **18×**。
+- 逐项优化(185.5 → 82s)见 [`docs/性能优化记录.md`](docs/性能优化记录.md)。
+
+> 复现:`uv run python tools/bench_all_mods.py`(我们,~82s);
+> `python tools/bench_native.py <mod>...`(原生,~23 min,需 `tl2_console_fork`
+> 编出的 `TL2-Mikuro-Console.exe` 放进 TL2 安装目录)。
 
 ## Tooling (`tools/`)
 
