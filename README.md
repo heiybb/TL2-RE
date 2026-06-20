@@ -51,6 +51,41 @@ uv run python -m mikuro_mod_packer.mpp <LAYOUT> <OUT.mpp> [--snap 10]
 uv run python -m unittest discover -s tests -v
 ```
 
+## Benchmark — vs the native GUTS editor
+
+**口径** — 原生:forked headless `tl2_console_fork` 驱动真 `EditorGuts.dll`,
+`InitEditor` 一次性 **5.14s**(下表已摊销),之后每 mod **warm** 计时(`CreateMod`
+= 编译 + RAW + 打包,`EditorRegenPathingData` = byte-exact MPP)。我们:本仓
+`tools/bench_all_mods.py`,**从零、内存内、不改动源 mod**,MPP 走离线 numba 后端。
+同机(16 核)、同一批 mod、同一 TL2 安装。
+
+| Mod | 原生 total (s) | **我们 total (s)** | 倍率 |
+|---|--:|--:|--:|
+| final_fantasy_weapons | 0.77 | **0.07** | 11.0× |
+| arkhamsarmory | 1.46 | **0.22** | 6.6× |
+| AdventurerTime (33.8 MB) | 6.31 | **0.52** | 12.1× |
+| SYN_THROWING_WEAPONS | 1.41 | **0.18** | 7.8× |
+| MIKURO_FUN | 1.15 | **0.94** | 1.2× |
+| 挑战者大陆--佣兵系统 | 13.91 | **2.00** | 7.0× |
+| MIKURO_VANILLA_OVERHAUL | 51.11 | **4.97** | 10.3× |
+| 挑战者大陆--POE | 53.80 | **5.10** | 10.5× |
+| **8-mod 合计** | **129.9** (另 +5.14 一次性 init) | **14.0** | **≈ 9.3×** |
+
+- **MPP-heavy mod 差距最大**:VANILLA / POE 原生 51–54s,其中 byte-exact 寻路
+  regen 就占 **29–31s**;我们 numba 离线 MPP ~3.5s。光看 MPP ≈ **8–9× 快**。
+- **唯一接近的是 MIKURO_FUN**(关卡极少):离线 MPP 有 ~1s 的 numba 首次 JIT
+  固定开销(类比原生那 5.14s init,只是小得多),单 tile 摊不开。
+- **口径诚实**:原生 MPP 是 *byte-exact*,我们这条用的是 numba 离线**近似**
+  (整语料 ~99.7% cell 命中)。若要 byte-exact MPP,用 `--mpp dll` 驱动同一个
+  编辑器(MPP 段与原生同速),但编译 / RAW / 打包仍快 **3–90×**。
+- 完整 **25-mod 语料**从零打包合计约 **82s**(Compile 24 / RAW 19 / MPP 24 /
+  Pack 15;702 MB 输出)。逐项优化(185.5 → 83s)见
+  [`docs/性能优化记录.md`](docs/性能优化记录.md)。
+
+> 复现:`uv run python tools/bench_all_mods.py`(我们);
+> `python tools/bench_native.py --default`(原生,需 `tl2_console_fork` 编译出的
+> `TL2-Mikuro-Console.exe` 放进 TL2 安装目录)。
+
 ## Tooling (`tools/`)
 
 逆向/校验/基准脚本:`mod_disasm.py`(`.MOD` 反汇编)、`cmp_mod.py` / `cmp_bindat.py`
