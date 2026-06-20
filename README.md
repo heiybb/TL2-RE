@@ -1,74 +1,76 @@
 # TL2-RE
 
-把 Torchlight 2 那几种私有二进制格式 —— `.MOD` / `BINDAT` / `BINLAYOUT` / `RAW` / `MPP`
-—— 从 `EditorGuts.dll` 和游戏加载器里逆向出来,然后**离线、不开 GUTS 编辑器**地重新实现一遍。
-An offline, byte-exact reimplementation of TL2's proprietary pack formats, recovered straight from the DLL.
+**English** | [简体中文](README.zh-CN.md)
 
-核心是 `mikuro_mod_packer`:喂它文本源(`.DAT` / `.LAYOUT`),它直接序列化出跟原生 DLL **逐字节对得上**
-的二进制,再拼成一个游戏能加载、能生效的 `.MOD`。中间几个容易出错的关键细节 —— PAK rollingHash、
-清单文件名必须全大写、BINDAT 的 per-file string-hash —— 都已经验证过了。
+An offline, byte-exact reimplementation of Torchlight 2's proprietary `.MOD` / `BINDAT` / `BINLAYOUT` / `RAW` / `MPP`
+formats — reverse-engineered out of `EditorGuts.dll` and the game loader, and rebuilt **offline, with no GUTS editor in the loop**.
+
+At the core is `mikuro_mod_packer`: feed it the text sources (`.DAT` / `.LAYOUT`) and it serializes binary that's
+**byte-for-byte aligned with the native DLL**, then assembles a `.MOD` the game can load and actually run. The handful of
+easy-to-get-wrong details in between — the PAK rollingHash, the mandatory uppercase manifest filenames, BINDAT's per-file
+string-hash — are all verified.
 
 ## What's inside
 
-| 模块 | 作用 |
+| Module | Role |
 |---|---|
-| `mikuro_mod_packer/packer.py` | `.MOD` 容器写入 + 全流程编排(Compile ‖ RAW ‖ MPP ‖ Pack) |
-| `mikuro_mod_packer/bindat.py` | `.DAT` → `.BINDAT`(per-file string→id hash 表) |
-| `mikuro_mod_packer/binlayout.py` | `.LAYOUT` → `.BINLAYOUT`(含 Logic Group / datagroup) |
-| `mikuro_mod_packer/raw.py` | UNITDATA / AFFIXES / SKILLS / MISSILES / UI 等 `.RAW` 索引 |
-| `mikuro_mod_packer/mpp/` | `.MPP` 寻路网格(numba 加速的离线近似 + EditorGuts.dll 字节精确双通道) |
-| `mikuro_mod_packer/rghash.py` | `rg_hash`(GUTS 字符串哈希) |
+| `mikuro_mod_packer/packer.py` | `.MOD` container writer + full-pipeline orchestration (Compile ‖ RAW ‖ MPP ‖ Pack) |
+| `mikuro_mod_packer/bindat.py` | `.DAT` → `.BINDAT` (per-file string→id hash table) |
+| `mikuro_mod_packer/binlayout.py` | `.LAYOUT` → `.BINLAYOUT` (incl. Logic Group / datagroup) |
+| `mikuro_mod_packer/raw.py` | `.RAW` indexes: UNITDATA / AFFIXES / SKILLS / MISSILES / UI, etc. |
+| `mikuro_mod_packer/mpp/` | `.MPP` pathing grids (numba-accelerated offline approximation + byte-exact EditorGuts.dll backend) |
+| `mikuro_mod_packer/rghash.py` | `rg_hash` (GUTS string hash) |
 
-逆向记录见 [`docs/`](docs/):
-- [`EditorGuts逆向-MOD打包与读取-完整记录.md`](docs/EditorGuts逆向-MOD打包与读取-完整记录.md) — 完整中文逆向记录(MOD/BIN*/RAW/MPP 的写入与读取路径 + 函数地址附录)
-- [`EditorGuts-RE-MOD-pack-and-read.md`](docs/EditorGuts-RE-MOD-pack-and-read.md) — English translation
-- [`性能优化记录.md`](docs/性能优化记录.md) — 全量打包流水线 185.5→82s 的逐项优化(均字节一致)
+Reverse-engineering write-ups in [`docs/`](docs/):
+- [`EditorGuts-RE-MOD-pack-and-read.md`](docs/EditorGuts-RE-MOD-pack-and-read.md) — the full RE record (write/read paths for MOD/BIN*/RAW/MPP + a function-address appendix)
+- [`EditorGuts逆向-MOD打包与读取-完整记录.md`](docs/EditorGuts逆向-MOD打包与读取-完整记录.md) — the same record, in Chinese
+- [`性能优化记录.md`](docs/性能优化记录.md) — the step-by-step optimization log that took the full-corpus pack from 185.5 → 82s (Chinese; every step byte-identical)
 
 ## Requirements
 
 - Python **>= 3.12**, [uv](https://docs.astral.sh/uv/)
-- numpy(必需);numba + isal(可选加速,缺失时自动回退到纯 Python / zlib)
-- **A real Torchlight 2 install** at `E:\Torchlight 2\MEDIA` — 该路径在多处是**硬编码常量**。
-  打包真实内容、跑 `RAW` 构建器、以及大量「真机比对」测试都直接读取该目录。
-  没有这个安装、或路径不同,相关代码/测试会失败或自跳过。
+- numpy (required); numba + isal (optional accelerators — the code falls back to pure Python / zlib without them)
+- **A real Torchlight 2 install** at `E:\Torchlight 2\MEDIA` — this path is a **hardcoded constant** in several places.
+  Packing real content, the `RAW` builders, and the many "compare-against-the-real-install" tests all read it directly.
+  Without that install (or at a different path), the relevant code/tests will fail or self-skip.
 
 ## Quickstart
 
 ```bash
-uv sync                                   # 创建环境、装依赖
+uv sync                                   # create the env, install deps
 
-# 把一个 mod 目录(含 MEDIA/ 子树)打包成可加载的 .MOD(内存转换,不改动源 MEDIA)
+# Pack a mod directory (containing a MEDIA/ subtree) into a loadable .MOD
+# (converted in memory; the source MEDIA is not modified)
 uv run python -m mikuro_mod_packer <mod_directory>
-#   --in-place / --temp-copy   写入策略
-#   --mpp {dll,re,none}        .MPP 后端(dll=EditorGuts 字节精确,默认;re=离线近似)
-#   --raw {auto,none}          RAW 索引生成
+#   --in-place / --temp-copy   write strategy
+#   --mpp {dll,re,none}        .MPP backend (dll = byte-exact via EditorGuts, default; re = offline approximation)
+#   --raw {auto,none}          RAW index generation
 
-# 单独离线生成一个 .MPP
+# Generate a single .MPP offline
 uv run python -m mikuro_mod_packer.mpp <LAYOUT> <OUT.mpp> [--snap 10]
 
-# 测试(stdlib unittest,无 pytest;真机测试在缺少 TL2 安装时自跳过)
+# Tests (stdlib unittest, no pytest; real-install tests self-skip when TL2 is absent)
 uv run python -m unittest discover -s tests -v
 ```
 
 ## Benchmark — vs the native GUTS editor (full 25-mod corpus)
 
-**全语料从零打包:原生 GUTS 编辑器 ~23 分钟,本 packer ~82 秒 —— 端到端 16.6×。**
+**Packing the whole corpus from scratch: the native GUTS editor takes ~23 minutes; this packer takes ~82 seconds — 16.6× end-to-end.**
 
-**口径** — 原生:forked headless `tl2_console_fork` 驱动真 `EditorGuts.dll`
-(`InitEditor` 一次性 **3.85s**,已摊销),每 mod **warm** 计时 `CreateMod`(编译 +
-RAW + 打包)+ `EditorRegenPathingData`(byte-exact MPP);`COMMANDMENTS` 作冷启动
-warm-up 丢弃,其余 **24 个全部 `ok`**。我们:`tools/bench_all_mods.py`,**从零、
-内存内、不改动源 mod**,MPP 走离线 numba 后端。同机(16 核)、同一 TL2 安装。
+**Setup** — Native: a forked headless `tl2_console_fork` drives the real `EditorGuts.dll` (`InitEditor` paid once, **3.85s**,
+amortized), timing each mod **warm**: `CreateMod` (compile + RAW + pack) + `EditorRegenPathingData` (byte-exact MPP);
+`COMMANDMENTS` is the discarded cold-load warm-up, the other **24 all `ok`**. Ours: `tools/bench_all_mods.py`, **from scratch,
+in memory, source mod untouched**, MPP on the offline numba backend. Same machine (16 cores), same TL2 install.
 
-| 阶段 | 原生 (s) | 我们 (s) | 倍率 |
+| Stage | Native (s) | Ours (s) | Speedup |
 |---|--:|--:|--:|
-| Build(编译 + RAW + 打包,**byte-exact 可比**) | 1053.8 | 58.0 | **18.2×** |
-| MPP(寻路栅格) | 301.1 | 23.5 | **12.8×** |
-| **合计**(另 +原生一次性 3.85s init) | **1354.9** | **81.6** | **16.6×** |
+| Build (compile + RAW + pack, **byte-exact-comparable**) | 1053.8 | 58.0 | **18.2×** |
+| MPP (pathing grids) | 301.1 | 23.5 | **12.8×** |
+| **Total** (+ native's one-time 3.85s init) | **1354.9** | **81.6** | **16.6×** |
 
-<details><summary><b>完整 24-mod 逐项(按原生耗时降序;点开)</b></summary>
+<details><summary><b>Full per-mod table (24 mods, by native time desc; click to expand)</b></summary>
 
-| Mod | 文件 | 原生 build | 原生 MPP | 原生 total | **我们 total** | 倍率 |
+| Mod | Files | Native build | Native MPP | Native total | **Ours total** | Speedup |
 |---|--:|--:|--:|--:|--:|--:|
 | 挑战者大陆--通用素材01 | 12712 | 164.05 | 208.77 | 372.82 | **14.95** | 24.9× |
 | 挑战者大陆--职业技能 | 68217 | 268.42 | 0.00 | 268.42 | **12.17** | 22.1× |
@@ -95,29 +97,28 @@ warm-up 丢弃,其余 **24 个全部 `ok`**。我们:`tools/bench_all_mods.py`,*
 | LurkerHUD_(Non-Conflict) | 24 | 0.46 | 0.00 | 0.46 | **0.05** | 9.2× |
 | EFFECTS_LIST_OVERHAUL | 3 | 0.21 | 0.00 | 0.21 | **0.02** | 10.5× |
 
-*(COMMANDMENTS 作 warm-up 已丢弃。)*
+*(COMMANDMENTS used as the warm-up, discarded.)*
 
 </details>
 
-- **大 mod 是分水岭**:`职业技能`(68k 文件)原生 **268s** vs 我们 **12s**;
-  `通用素材01`(277 MB)原生 **373s** vs 我们 **15s**。原生编辑器逐文件串行
-  compile/pack,文件越多越塌;我们多进程 / 多线程并行,几乎线性。
-- **Build-only 已 18×**:不含 MPP 的编译 + RAW + 打包(可与原生**逐字节对齐**的
-  部分)原生 1053.8s vs 我们 58.0s —— 这块**没有任何近似**。
-- **口径诚实**:原生 MPP 是 *byte-exact*,我们这条是 numba 离线**近似**(整语料
-  ~99.7% cell 命中)。要 byte-exact 就用 `--mpp dll` 驱动同一编辑器(MPP 段与原生
-  同速),build 仍 **18×**。
-- 逐项优化(185.5 → 82s)见 [`docs/性能优化记录.md`](docs/性能优化记录.md)。
+- **The big mods are the divider**: `职业技能` (68k files) is **268s** native vs **12s** ours; `通用素材01` (277 MB) is
+  **373s** native vs **15s** ours. The native editor compiles/packs file-by-file and collapses as the file count grows;
+  ours parallelizes across processes/threads and scales near-linearly.
+- **Build alone is already 18×**: the non-MPP compile + RAW + pack — the part that's **byte-for-byte alignable** with native —
+  is 1053.8s native vs 58.0s ours, **with no approximation involved**.
+- **Honest caveat**: native MPP is *byte-exact*; our path here is the numba offline **approximation** (~99.7% cell-accurate
+  over the corpus). For byte-exact MPP, `--mpp dll` drives the same editor (MPP at native speed), and build is still **18×**.
+- The step-by-step optimization (185.5 → 82s) is in [`docs/性能优化记录.md`](docs/性能优化记录.md).
 
-> 复现:`uv run python tools/bench_all_mods.py`(我们,~82s);
-> `python tools/bench_native.py <mod>...`(原生,~23 min,需 `tl2_console_fork`
-> 编出的 `TL2-Mikuro-Console.exe` 放进 TL2 安装目录)。
+> Reproduce: `uv run python tools/bench_all_mods.py` (ours, ~82s);
+> `python tools/bench_native.py <mod>...` (native, ~23 min; needs the `TL2-Mikuro-Console.exe` built from
+> `tl2_console_fork`, placed in the TL2 install dir).
 
 ## Tooling (`tools/`)
 
-逆向/校验/基准脚本:`mod_disasm.py`(`.MOD` 反汇编)、`cmp_mod.py` / `cmp_bindat.py`
-(native-vs-ours 对比)、`verify_container_writer.py`(容器写入字节精确)、
-`bench_all_mods.py` / `bench_native.py`(基准)、`build_*_*.py`(重建 `data/*.json`)、
-`tl2_console_fork/`(C# 无头驱动 fork,字节精确 `.MPP` 用)。
+RE / verification / benchmark scripts: `mod_disasm.py` (`.MOD` disassembler), `cmp_mod.py` / `cmp_bindat.py`
+(native-vs-ours diff), `verify_container_writer.py` (container-writer byte-exact), `bench_all_mods.py` / `bench_native.py`
+(benchmarks), `build_*_*.py` (rebuild the `data/*.json`), `tl2_console_fork/` (C# headless driver fork, used for byte-exact `.MPP`).
 
-> ⚠️ 这是对一款商业游戏私有格式的**研究性**复现。仅用于互操作 / 模组制作,不分发任何游戏资产。
+> ⚠️ This is a **research** reimplementation of a commercial game's proprietary formats. For interoperability / modding only;
+> it ships no game assets.
