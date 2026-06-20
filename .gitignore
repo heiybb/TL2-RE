@@ -1,0 +1,53 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+wheels/
+.eggs/
+
+# ---- Virtual environments / uv ----
+.venv/
+venv/
+env/
+# uv.lock IS committed (reproducible env); do not ignore it.
+
+# ---- Numba JIT cache (regenerated on first run) ----
+*.nbc
+*.nbi
+__pycache__/*.nb*
+
+# ---- Derived corpus cache (rebuilt from the TL2 install via build_string_dict) ----
+mikuro_mod_packer/data/*.pkl
+
+# NOTE: data/*.json (binlayout_schema.json, binlayout_datagroup_tags.json) are
+# package data and MUST stay tracked — they are NOT covered by the *.pkl rule.
+
+# ---- Run artifacts / scratch ----
+*.log
+*.err
+*.tmp
+/_dat_dict.pkl
+out/
+scratch/
+_scratch/
+
+# ---- Packed output / native-editor scratch (never commit game data) ----
+*.MOD
+*.mod
+
+# ---- C# console fork (tools/tl2_console_fork) build output ----
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

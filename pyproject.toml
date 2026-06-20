@@ -1,0 +1,17 @@
+[project]
+name = "tl2-re"
+version = "0.1.0"
+description = "Offline reverse-engineered packer/reader for Torchlight 2 .MOD / BINDAT / BINLAYOUT / RAW / MPP formats"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.6",
+    # Optional accelerators — the code falls back to pure Python / zlib if absent,
+    # but they are pinned here so `uv sync` gives the fast path by default.
+    "numba>=0.65.1",
+    "isal>=1.8.0",
+]
+
+# Run as an application (python -m mikuro_mod_packer), not an installed/built wheel.
+[tool.uv]
+package = false
