@@ -1,13 +1,12 @@
 # TL2-RE
 
-Torchlight 2 二进制格式的**离线逆向与复现**工具集 — an offline, byte-exact
-reimplementation of Torchlight 2's proprietary `.MOD` / `BINDAT` / `BINLAYOUT` /
-`RAW` / `MPP` formats, recovered by reverse-engineering `EditorGuts.dll` and the
-game loader, without the GUTS editor in the loop.
+把 Torchlight 2 那几种私有二进制格式 —— `.MOD` / `BINDAT` / `BINLAYOUT` / `RAW` / `MPP`
+—— 从 `EditorGuts.dll` 和游戏加载器里逆向出来,然后**离线、不开 GUTS 编辑器**地重新实现一遍。
+An offline, byte-exact reimplementation of TL2's proprietary pack formats, recovered straight from the DLL.
 
-`mikuro_mod_packer` 直接从文本源(`.DAT` / `.LAYOUT`)序列化出与原生 DLL **逐字节一致**
-的二进制,再组装成游戏可加载的 `.MOD` 容器(含 PAK rollingHash、大写文件名清单、
-per-file string-hash 等已验证的关键细节)。
+核心是 `mikuro_mod_packer`:喂它文本源(`.DAT` / `.LAYOUT`),它直接序列化出跟原生 DLL **逐字节对得上**
+的二进制,再拼成一个游戏能加载、能生效的 `.MOD`。中间几个容易出错的关键细节 —— PAK rollingHash、
+清单文件名必须全大写、BINDAT 的 per-file string-hash —— 都已经验证过了。
 
 ## What's inside
 
@@ -23,7 +22,7 @@ per-file string-hash 等已验证的关键细节)。
 逆向记录见 [`docs/`](docs/):
 - [`EditorGuts逆向-MOD打包与读取-完整记录.md`](docs/EditorGuts逆向-MOD打包与读取-完整记录.md) — 完整中文逆向记录(MOD/BIN*/RAW/MPP 的写入与读取路径 + 函数地址附录)
 - [`EditorGuts-RE-MOD-pack-and-read.md`](docs/EditorGuts-RE-MOD-pack-and-read.md) — English translation
-- [`性能优化记录.md`](docs/性能优化记录.md) — 全量打包流水线 185.5→83s 的逐项优化(均字节一致)
+- [`性能优化记录.md`](docs/性能优化记录.md) — 全量打包流水线 185.5→82s 的逐项优化(均字节一致)
 
 ## Requirements
 
