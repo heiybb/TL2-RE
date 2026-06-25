@@ -183,7 +183,7 @@ def _emit_converted(path, data, media_dir, overrides):
             fh.write(data)
 
 
-def convert_all(media_dir, overrides=None, mpp='dll', raw='auto'):
+def convert_all(media_dir, overrides=None, mpp='re', raw='auto'):
     """Run all conversions on MEDIA directory.
 
     If `overrides` is a dict, converted bytes are collected there (keyed by
@@ -191,18 +191,19 @@ def convert_all(media_dir, overrides=None, mpp='dll', raw='auto'):
     untouched and letting pack_mod build the .MOD from memory — no temp copy.
 
     `mpp` selects the .MPP pathing-grid backend run after the RAW step:
-      'dll'          BYTE-EXACT via the real EditorGuts.dll (mpp/dll.py) — DEFAULT.
-                     This is the ONLY backend whose output matches the game's: the
-                     offline 're' approximation cannot reach byte-fidelity (even the
-                     plainest template differs ~0.5-1%: the editor's 0.1 swept ray,
-                     ±0.3 clearance probes and exact slope cutoff are not byte-
-                     replicable in vectorized numpy). The DLL output differs from the
-                     game's by NOTHING on non-overhang tiles and only the irreducible
-                     ~0.1% float-tie-break on cliff/overhang tiles. Falls back to 're'
-                     (with a warning) if the editor/console env is unavailable.
-      're'           offline approximate generator (mpp/; fast, needs numpy; ~91-99%
-                     of cells match — use when the editor install is not present)
-      None / 'skip'  do not generate any .MPP.
+      're'           offline generator (mpp/; needs numpy; ~91-99% of cells match) — DEFAULT.
+                     Robust: pure offline, no editor dependency, never crashes. Cell
+                     accuracy (~91-99%) is plenty for walkability — the player can move;
+                     only byte-fidelity vs the game is sacrificed, which doesn't matter
+                     for gameplay. This is the safe default for personal modding.
+      'dll'          BYTE-EXACT via the real EditorGuts.dll (mpp/dll.py). The only
+                     backend matching the game byte-for-byte, BUT it drives the real
+                     editor which renders to compute pathing → can hit the D3D9/NVIDIA
+                     crash mid-run and (because its 2-pass --twice leaves pass-1 STUB
+                     .mpp behind) silently emit empty 50x50 all-blocked stubs → maps
+                     become unwalkable. Use only when byte-fidelity is required and the
+                     editor env is known-good.
+      None / 'skip'  do not generate any .MPP (keep the source's existing .MPP).
 
     `raw` controls the 7 RAW index files (AFFIXES/SKILLS/MISSILES/TRIGGERABLES/
     UNITDATA/UI/ROOMPIECES), step 3:
@@ -1103,14 +1104,16 @@ def pack_mod(media_dir, output_path, mod_name, original_mod_dir=None, overrides=
 
 def _parse_mpp_flag(argv):
     """Extract --mpp {re,dll,none} from argv, returning (backend, remaining_argv).
-    Supports both `--mpp re` and `--mpp=re`; default 'dll' (byte-exact via the real
-    editor; falls back to 're' automatically if the editor env is absent)."""
-    backend = 'dll'
+    Supports both `--mpp re` and `--mpp=re`; default 're' (our own offline generator —
+    robust, no editor; ~91-99% cell-accurate, plenty for walkability). Use --mpp dll
+    for byte-exact via the real EditorGuts.dll (needs the editor env; can crash mid-run
+    → may emit empty stub .mpp), or --mpp none to keep the source's existing .mpp."""
+    backend = 're'
     out = []
     it = iter(argv)
     for a in it:
         if a == '--mpp':
-            backend = next(it, 'dll')
+            backend = next(it, 're')
         elif a.startswith('--mpp='):
             backend = a.split('=', 1)[1]
         else:
@@ -1154,10 +1157,10 @@ def main():
         print("  (default)    Convert in memory, pack without copying MEDIA (fastest, non-mutating)")
         print("  --in-place   Write converted files into MEDIA, then pack")
         print("  --temp-copy  Copy MEDIA to a temp dir, convert there, then pack")
-        print("  --mpp dll    Byte-exact .MPP via the real EditorGuts.dll (DEFAULT;")
-        print("               auto-falls-back to 're' if the editor env is absent)")
-        print("  --mpp re     Generate .MPP pathing grids offline (fast APPROXIMATION)")
-        print("  --mpp none   Skip .MPP generation")
+        print("  --mpp re     Offline .MPP generator (DEFAULT; robust, no editor, ~91-99% accurate)")
+        print("  --mpp dll    Byte-exact .MPP via the real EditorGuts.dll (needs editor env;")
+        print("               can crash mid-run and emit empty stub .mpp)")
+        print("  --mpp none   Skip generation, keep the source's existing .MPP")
         print("  --raw auto   Emit RAW indexes on-demand per content type (DEFAULT)")
         print("  --raw none   Skip RAW generation entirely")
         sys.exit(1)

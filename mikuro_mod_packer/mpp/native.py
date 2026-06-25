@@ -623,7 +623,7 @@ def _build_index(tris, pad):
 
 
 def build_grid_fast(layout, ctx, box, origin_x, origin_z, gw, gh,
-                    reachability=False, assemble_links=False):
+                    reachability=False, assemble_links=False, return_heights=False):
     """BYTE-IDENTICAL to build_grid, but XZ-bucket-culled so each cell's down-ray
     and clearance probes only test triangles whose padded AABB overlaps the cell's
     bucket. This is the production grid builder (build_grid is the un-culled
@@ -691,6 +691,10 @@ def build_grid_fast(layout, ctx, box, origin_x, origin_z, gw, gh,
     enclosure_pass(grid, gw, gh)
     if reachability:
         reachability_void(grid, heights, gw, gh)
+    if return_heights:
+        # heights[idx] = ground-hit Y per cell (None where the down-ray missed). Caller bakes a
+        # terrain-height grid so a walker can follow slopes instead of staying at a fixed Y.
+        return bytes(grid), gw, gh, heights
     return bytes(grid), gw, gh
 
 
