@@ -128,10 +128,32 @@ def _enc_curve(v):
     return out
 
 
+def _enc_int64(v):
+    try:
+        return struct.pack("<q", int(str(v[0]).strip() or "0"))
+    except (ValueError, TypeError):
+        return struct.pack("<q", 0)
+
+
+def _enc_u32list(v):
+    # comma-separated u32 list -> u16 count + count*u32 (e.g. ALLOWED UNITTYPES).
+    s = (v[0] or "").strip()
+    parts = [p for p in s.split(",") if p.strip() != ""] if s else []
+    out = struct.pack("<H", len(parts))
+    for p in parts:
+        try:
+            out += struct.pack("<I", int(p.strip()) & 0xFFFFFFFF)
+        except (ValueError, TypeError):
+            out += struct.pack("<I", 0)
+    return out
+
+
 ENCODERS = {
     "float": _enc_float,
     "u32int": _enc_u32int,
     "u32bool": _enc_u32bool,
+    "int64": _enc_int64,
+    "u32list": _enc_u32list,
     "string": _enc_string,
     "g2": _enc_g2,
     "g3": _enc_g3,
@@ -160,11 +182,13 @@ def parse_layout(path_or_text):
     Property order is preserved from the source text.
     """
     txt = _read_text(path_or_text)
-    # Strip the CR and the leading indentation (tabs) only -- the VALUE part of
-    # a property line may legitimately end in spaces, which are significant
-    # (GUTS preserves them in the NAME / string fields), so we must NOT strip
-    # the trailing whitespace off the whole line.
-    lines = [l.rstrip("\r").lstrip("\t ") for l in txt.split("\n")]
+    # Strip the CR and leading indentation (tabs). Trailing TABS are also stripped
+    # because GUTS sometimes appends stray indentation tabs after a structural
+    # close-tag (e.g. "[/BASEOBJECT]\t\t\t\t"), which would otherwise fail the
+    # `== "[/BASEOBJECT]"` check and merge the object with its sibling. A VALUE may
+    # legitimately end in SPACES (significant in NAME/string fields), so trailing
+    # spaces are preserved; values never end in a tab (tabs are indentation only).
+    lines = [l.rstrip("\r").rstrip("\t").lstrip("\t ") for l in txt.split("\n")]
     pos = [0]
 
     def baseobjs(end_tag):
@@ -504,8 +528,14 @@ def _serialize_timelinedata(tobjs, out):
     out.append(len(tobjs) & 0xFF)
     for to in tobjs:
         out += struct.pack("<q", to["objectid"])
-        out.append(len(to["entries"]) & 0xFF)
-        for ent in to["entries"]:
+        # GUTS holds properties and events in two separate lists and writes all
+        # PROPERTIES first, then all EVENTS (each group keeps its source order) --
+        # regardless of how they were interleaved in the text. Stable-partition.
+        ents = to["entries"]
+        ordered = [e for e in ents if e["event"] == ""] + \
+                  [e for e in ents if e["event"] != ""]
+        out.append(len(ordered) & 0xFF)
+        for ent in ordered:
             out += _enc_short_string(ent["property"])
             out += _enc_short_string(ent["event"])
             is_property = (ent["event"] == "")
